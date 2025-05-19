@@ -20,6 +20,7 @@
     get_env/2,
     tables/0,
     table/0,
+    get_statistics/1,
     get_statistics/3,
     get_statistics2/4,
     pick_items/2,
@@ -223,6 +224,10 @@ histogram(Values, DataPoints) ->
     [DP || {K,_} = DP <- H,
            lists:member(K, DataPoints)].
 
+get_statistics(Values) ->
+    Sorted = lists:sort(Values),
+    get_statistics(length(Sorted), lists:sum([V || {_,V} <- Sorted]), Sorted).
+
 -spec get_statistics(Length::non_neg_integer(),
                      Total::non_neg_integer(),
                      Sorted::list()) -> [{atom(), number()}].
@@ -372,7 +377,6 @@ ensure_all_started(App) ->
     %% in earlier R16B versions of OTP
     ensure_all_started(App, []).
 
--ifdef(rand_module).
 seed() ->
     {0, 0, 0}.
 
@@ -388,24 +392,6 @@ uniform() ->
 
 uniform(N) ->
     rand:uniform(N).
-
--else.
-seed() ->
-    random:seed().
-
-seed0() ->
-    random:seed0().
-
-seed({A, B, C}) ->
-    random:seed({A, B, C}).
-
-uniform() ->
-    random:uniform().
-
-uniform(N) ->
-    random:uniform(N).
-
--endif.
 
 %% This implementation is originally from Basho's
 %% Webmachine. Reimplementation of ensure_all_started. NOTE this does

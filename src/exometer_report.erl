@@ -36,7 +36,7 @@
 %%     to the recipient through a previous `exometer_report()' function.
 %%
 %% + Tear down subscription<br/>When `exometer_report:unsubscribe()' is called, addressing the
-%%     custom report plugin, the recipient's `exometer_unsubscribe()' function
+%%     custom report plugin, the recipient's `Mod:exometer_unsubscribe/4' function
 %%     will be invoked to notify the plugin of the deleted subscription.
 %%
 %%
@@ -56,7 +56,7 @@
 %% + `Options'<br/>Provides the prop list with attributes from the application environment
 %%     for the cusom recipient. See {@section Configuring reporter plugins} for
 %%
-%% The `exomoeter_init()' function should return `{ok, State}' where
+%% The `Mod:exometer_init/1' function should return `{ok, State}' where
 %% State is a tuple that will be provided as a reference argument to
 %% future calls made into the plugin. Any other return formats will
 %% cancel the creation of the custom reporting plugin.
@@ -64,7 +64,7 @@
 %%
 %% === exometer_subscribe/5 ===
 %%
-%% The `exometer_subscribe()' function is invoked as follows:
+%% The `Mod:exometer_subscribe/5' function is invoked as follows:
 %%
 %% <pre lang="erlang">
 %%      exometer_subscribe(Metric, DataPoint, Interval, Extra, State)</pre>
@@ -96,7 +96,7 @@
 %%
 %% === exometer_report/5 ===
 %%
-%% The `exometer_report()' function is invoked as follows:
+%% The `Mod:exometer_report/5' function is invoked as follows:
 %%
 %% <pre lang="erlang">
 %%      exometer_report(Metric, DataPoint, Extra, Value, State)</pre>
@@ -124,7 +124,7 @@
 %%
 %% === exometer_unsubscribe/4 ===
 %%
-%% The `exometer_unsubscribe()' function is invoked as follows:
+%% The `Mod:exometer_unsubscribe/4' function is invoked as follows:
 %%
 %% <pre lang="erlang">
 %%      exometer_unsubscribe(Metric, DataPoint, Extra, State)</pre>
@@ -132,7 +132,7 @@
 %% The custom plugin can use this notification to modify and return its
 %% state in order to free resources used to maintain the now de-activated
 %% subscription. When this call returns, the given metric / data point
-%% will not be present in future calls to `exometer_report()'.
+%% will not be present in future calls to `exometer_report/5'.
 %%
 %% + `Metric'<br/>Specifies the metric that is now subscribed to by the plugin
 %%     as a list of atoms.
@@ -147,7 +147,7 @@
 %%
 %% + `State'<br/>Contains the state returned by the last called plugin function.
 %%
-%% The `exometer_unsubscribe()' function should return `{ok, State}' where
+%% The `Mod:exometer_unsubscribe/4' function should return `{ok, State}' where
 %% State is a tuple that will be provided as a reference argument to
 %% future calls made into the plugin. Any other return formats will
 %% generate an error log message by exometer.
@@ -213,7 +213,7 @@
 
 -export_type([metric/0, datapoint/0, interval/0, extra/0]).
 
--include_lib("hut/include/hut.hrl").
+-include_lib("kernel/include/logger.hrl").
 -include("exometer.hrl").
 
 -define(SERVER, ?MODULE).
@@ -653,12 +653,16 @@ new_entry(Entry) ->
 %% @doc
 %% Initializes the server
 %%
-%% @spec init(Args) -> {ok, State} |
-%%                     {ok, State, Timeout} |
-%%                     ignore |
-%%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
+-spec init(Args) -> {ok, State}
+                  | {ok, State, Timeout}
+                  | ignore
+                  | {stop, Reason}
+              when Args    :: list(),
+                   State   :: any(),
+                   Timeout :: non_neg_integer() | infinity,
+                   Reason  :: any().
 init([]) ->
     process_flag(trap_exit, true),
     D = ets:foldl(
@@ -688,7 +692,7 @@ start_reporters() ->
 
 do_start_reporters(S) ->
     Opts = get_report_env(),
-    ?log(info, "Starting reporters with ~p~n", [ Opts ]),
+    ?LOG_INFO("Starting reporters with ~p~n", [ Opts ]),
     %% Dig out the mod opts.
     %% { reporters, [ {reporter1, [{opt1, val}, ...]}, {reporter2, [...]}]}
     %% Traverse list of reporter and launch reporter gen servers as dynamic
@@ -827,15 +831,9 @@ merge_env(Tag, L, E) ->
 %% @doc
 %% Handling call messages
 %%
-%% @spec handle_call(Request, From, State) ->
-%%                                   {reply, Reply, State} |
-%%                                   {reply, Reply, State, Timeout} |
-%%                                   {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, Reply, State} |
-%%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+
 handle_call(start_reporters, _From, S) ->
     {reply, ok, do_start_reporters(S)};
 handle_call({subscribe,
@@ -1043,12 +1041,6 @@ handle_call(_Request, _From, State) ->
 
 %%--------------------------------------------------------------------
 %% @private
-%% @doc Handling cast messages.
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
 %%--------------------------------------------------------------------
 handle_cast({new_entry, Entry}, #st{} = St) ->
     [try erlang:send(Pid, {exometer_newentry, Entry})
@@ -1081,12 +1073,6 @@ handle_cast(_Msg, State) ->
 
 %%--------------------------------------------------------------------
 %% @private
-%% @doc Handling all non call/cast messages.
-%%
-%% @spec handle_info(Info, State) -> {noreply, State} |
-%%                                   {noreply, State, Timeout} |
-%%                                   {stop, Reason, State}
-%% @end
 %%--------------------------------------------------------------------
 handle_info({start_interval, Reporter, Name}, #st{} = St) ->
     case ets:lookup(?EXOMETER_REPORTERS, Reporter) of
@@ -1145,7 +1131,7 @@ handle_info({'DOWN', Ref, process, _Pid, Reason}, #st{} = S) ->
     {noreply, S};
 
 handle_info(_Info, State) ->
-    ?log(warning, "exometer_report:info(??): ~p~n", [ _Info ]),
+    ?LOG_WARNING("exometer_report:info(??): ~p~n", [ _Info ]),
     {noreply, State}.
 
 restart_reporter(#reporter{name = Name, opts = Opts, restart = Restart}) ->
@@ -1214,7 +1200,7 @@ handle_report(#key{reporter = Reporter} = Key, Interval, TS, #st{} = St) ->
                 end;
             false ->
                 %% Possibly an unsubscribe removed the subscriber
-                ?log(error, "No such subscriber (Key=~p)~n", [Key])
+                ?LOG_ERROR("No such subscriber (Key=~p)~n", [Key])
         end,
     St.
 
@@ -1229,15 +1215,15 @@ do_report(#key{metric = Metric,
             true;
         %% We did not find a value, but we should try again.
         {true, _ } ->
-            ?log(debug, "Metric(~p) Datapoint(~p) not found."
-                   " Will try again in ~p msec~n",
-                   [Metric, DataPoint, Interval]),
+            ?LOG_DEBUG("Metric(~p) Datapoint(~p) not found."
+                       " Will try again in ~p msec~n",
+                       [Metric, DataPoint, Interval]),
             true;
         %% We did not find a value, and we should not retry.
         _ ->
             %% Entry removed while timer in progress.
-            ?log(warning, "Metric(~p) Datapoint(~p) not found. Will not try again~n",
-                     [Metric, DataPoint]),
+            ?LOG_WARNING("Metric(~p) Datapoint(~p) not found. Will not try again~n",
+                         [Metric, DataPoint]),
             false
     end.
 
@@ -1329,14 +1315,6 @@ cancel_timer(TRef) ->
 
 %%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Reporter:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_server terminates
-%% with Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, State) -> void()
-%% @end
 %%--------------------------------------------------------------------
 terminate(_Reason, _) ->
     [terminate_reporter(R) || R <- ets:tab2list(?EXOMETER_REPORTERS)],
@@ -1344,11 +1322,6 @@ terminate(_Reason, _) ->
 
 %%--------------------------------------------------------------------
 %% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% @end
 %%--------------------------------------------------------------------
 
 %% -record(reporter, {
@@ -1516,8 +1489,8 @@ subscribe_(Reporter, Metric, DataPoint, Interval, RetryFailedMetrics,
               },
     case ets:lookup(?EXOMETER_SUBS, Key) of
         [] ->
-            ?log(debug, "subscribe_(~p, ~p, ~p, ~p, ~p, ~p, ~p)~n",
-                 [Reporter, Metric, DataPoint, Interval, RetryFailedMetrics, Extra, Status]),
+            ?LOG_DEBUG("subscribe_(~p, ~p, ~p, ~p, ~p, ~p, ~p)~n",
+                       [Reporter, Metric, DataPoint, Interval, RetryFailedMetrics, Extra, Status]),
             ets:insert(?EXOMETER_SUBS,
                        #subscriber{key = Key,
                                    interval = Interval,
@@ -1539,8 +1512,8 @@ unsubscribe_(Reporter, Metric, DataPoint, Extra) ->
                                          datapoint = DataPoint,
                                          extra = Extra}) of
         [#subscriber{} = Sub] ->
-            ?log(info, "unsubscribe_(~p, ~p, ~p, ~p)~n",
-                 [ Reporter, Metric, DataPoint, Extra]),
+            ?LOG_INFO("unsubscribe_(~p, ~p, ~p, ~p)~n",
+            [ Reporter, Metric, DataPoint, Extra]),
             unsubscribe_(Sub);
         [] ->
             not_found
@@ -1558,9 +1531,9 @@ unsubscribe_(#subscriber{key = #key{reporter = Reporter,
 report_values(Found, #key{reporter = Reporter, extra = Extra} = Key) ->
     try Reporter ! {exometer_report, Found, Extra}
     catch
-        ?EXCEPTION(error, Reason, Stacktrace) ->
-            ?log(error, "~p~nKey = ~p~nTrace: ~p",
-                        [Reason, Key, ?GET_STACK(Stacktrace)])
+        error:Reason:Stacktrace ->
+            ?LOG_ERROR("~p~nKey = ~p~nTrace: ~p",
+                       [Reason, Key, Stacktrace])
     end.
 
 retrieve_metric({Metric, Type, Enabled}, Acc) ->
@@ -1590,7 +1563,7 @@ get_subscribers(Metric, Type, Status,
                               metric = Metric,
                               datapoint = SDataPoint
                              }} | T ]) ->
-    ?log(debug,"get_subscribers(~p, ~p, ~p): match~n", [ Metric, SDataPoint, SReporter]),
+    ?LOG_DEBUG("get_subscribers(~p, ~p, ~p): match~n", [ Metric, SDataPoint, SReporter]),
     [ { SReporter, SDataPoint } | get_subscribers(Metric, Type, Status, T) ];
 
 %% get_subscribers(Metric, Type, Status,
@@ -1616,8 +1589,8 @@ get_subscribers(Metric, Type, Status,
                               metric = SMetric,
                               datapoint = SDataPoint
                              }} | T]) ->
-    ?log(debug, "get_subscribers(~p, ~p, ~p) nomatch(~p) ~n",
-           [ SMetric, SDataPoint, SReporter, Metric]),
+    ?LOG_DEBUG("get_subscribers(~p, ~p, ~p) nomatch(~p) ~n",
+               [ SMetric, SDataPoint, SReporter, Metric]),
     get_subscribers(Metric, Type, Status, T).
 
 %% Purge all subscriptions associated with a specific reporter
@@ -1646,7 +1619,7 @@ reporter_init(Reporter, Opts) ->
         {ok, St} ->
             {ok, Module, #rst{st = St, bulk = Bulk}};
         {error, Reason} ->
-            ?log(error, "Failed to start reporter ~p: ~p~n", [Module, Reason]),
+            ?LOG_ERROR("Failed to start reporter ~p: ~p~n", [Module, Reason]),
             exit(Reason)
     end.
 
@@ -1697,7 +1670,7 @@ reporter_loop(Module, #rst{st = St, bulk = Bulk} = RSt) ->
                   end;
               %% Allow reporters to generate their own callbacks.
               Other ->
-                  ?log(debug, "Custom invocation: ~p(~p)~n", [ Module, Other]),
+                  ?LOG_DEBUG("Custom invocation: ~p(~p)~n", [ Module, Other]),
                   case Module:exometer_info(Other, St) of
                       {ok, St1} -> {ok, St1};
                       _ -> {ok, St}
@@ -1758,9 +1731,9 @@ init_subscriber({apply, {M, F, A}}) ->
     lists:foreach(fun(Sub) ->
                           init_subscriber(Sub)
                   end, apply(M, F, A));
-init_subscriber({select, Expr}) when tuple_size(Expr)==3;
-                                     tuple_size(Expr)==4;
-                                     tuple_size(Expr)==5 ->
+init_subscriber({select, Expr}) when tuple_size(Expr)==4;
+                                     tuple_size(Expr)==5;
+                                     tuple_size(Expr)==6 ->
     {Pattern, Reporter, DataPoint, Interval, Retry, Extra} =
         case Expr of
             {P, R, D, I} -> {P, R, D, I, true, undefined};
@@ -1776,8 +1749,8 @@ init_subscriber({select, Expr}) when tuple_size(Expr)==3;
       end, Entries);
 
 init_subscriber(Other) ->
-    ?log(warning, "Incorrect static subscriber spec ~p. "
-             "Use { Reporter, Metric, DataPoint, Interval [, Extra ]}~n",
+    ?LOG_WARNING("Incorrect static subscriber spec ~p. "
+             "Use { Reporter, Metric, DataPoint [, Interval [, Extra ] ]}~n",
              [ Other ]).
 
 get_reporter_status(R) ->
